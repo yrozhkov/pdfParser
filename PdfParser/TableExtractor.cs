@@ -1,6 +1,7 @@
 ﻿using System.Text;
 using iTextSharp.text.pdf;
 using iTextSharp.text.pdf.parser;
+using PdfParser.Strategies;
 
 namespace PdfParser
 {

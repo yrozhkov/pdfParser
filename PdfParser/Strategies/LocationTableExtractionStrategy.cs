@@ -10,7 +10,7 @@ using PdfParser.pdfObjects;
 using Line = PdfParser.pdfObjects.Line;
 using Point = PdfParser.pdfObjects.Point;
 
-namespace PdfParser
+namespace PdfParser.Strategies
 {
     /// <summary>
     ///     Serches for all shapes in pdf documents along with text and detects tabular patterns
@@ -551,24 +551,10 @@ namespace PdfParser
             }
 
 
-            var normalizeVertDividers = NormalizeDividers(verticalDivider);
-
-            var templates = new List<TextRectangleTemplate>();
-
-            foreach (var rectDictKey in rectDictKeys)
-            {
-                if (!rectDictionary.ContainsKey(rectDictKey) || (rectDictionary[rectDictKey].Count == 0))
-                    continue;
-                var minWidth = rectDictionary[rectDictKey].Select(x => x.Height).Distinct().OrderBy(x => x).First();
-                foreach (var rowRectangle in rectDictionary[rectDictKey])
-                    templates.AddRange(CreateTemplates(rowRectangle, normalizeVertDividers, minWidth));
-            }
-
-
-            AssignTextRectangles(templates, textDictionary);
-
-            var returnDictionary = CreateTemplatesDictionary(templates, normalizeVertDividers);
-
+            var normalizedVerticalDividers = NormalizeDividers(verticalDivider);
+            var templates = AssignTextRectangles(normalizedVerticalDividers, rectDictKeys, rectDictionary,
+                textDictionary);
+            var returnDictionary = CreateTemplatesDictionary(templates, normalizedVerticalDividers);
 
             return returnDictionary;
         }
@@ -625,11 +611,27 @@ namespace PdfParser
         /// <summary>
         ///     Assignes text to templates
         /// </summary>
-        /// <param name="templates"></param>
+        /// <param name="normalizedVerticalDividers"></param>
+        /// <param name="rectDictKeys"></param>
+        /// <param name="rectDictionary"></param>
         /// <param name="textDictionary"></param>
-        private void AssignTextRectangles(List<TextRectangleTemplate> templates,
+        /// <returns></returns>
+        private List<TextRectangleTemplate> AssignTextRectangles(List<float> normalizedVerticalDividers,
+            List<float> rectDictKeys, Dictionary<float, List<Rectangle>> rectDictionary,
             Dictionary<float, List<TextRectangle>> textDictionary)
         {
+            var templates = new List<TextRectangleTemplate>();
+
+            foreach (var rectDictKey in rectDictKeys)
+            {
+                if (!rectDictionary.ContainsKey(rectDictKey) || (rectDictionary[rectDictKey].Count == 0))
+                    continue;
+                var minWidth = rectDictionary[rectDictKey].Select(x => x.Height).Distinct().OrderBy(x => x).First();
+                foreach (var rowRectangle in rectDictionary[rectDictKey])
+                    templates.AddRange(CreateTemplates(rowRectangle, normalizedVerticalDividers, minWidth));
+            }
+
+
             var tKeys = textDictionary.Keys.OrderBy(x => x).ToList();
 
             foreach (var textKey in tKeys)
@@ -647,6 +649,8 @@ namespace PdfParser
                             break;
                         }
                     }
+
+            return templates;
         }
 
         /// <summary>

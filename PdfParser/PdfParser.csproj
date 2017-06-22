@@ -62,7 +62,7 @@
     <Compile Include="pdfObjects\Line.cs" />
     <Compile Include="pdfObjects\LineMove.cs" />
     <Compile Include="pdfObjects\Point.cs" />
-    <Compile Include="LocationTableExtractionStrategy.cs" />
+    <Compile Include="Strategies\LocationTableExtractionStrategy.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="pdfObjects\Rectangle.cs" />

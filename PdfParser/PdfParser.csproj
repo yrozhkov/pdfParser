@@ -59,16 +59,16 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="pdfObjects\Line.cs" />
-    <Compile Include="pdfObjects\LineMove.cs" />
-    <Compile Include="pdfObjects\Point.cs" />
+    <Compile Include="PdfObjects\Line.cs" />
+    <Compile Include="PdfObjects\LineMove.cs" />
+    <Compile Include="PdfObjects\Point.cs" />
     <Compile Include="Strategies\LocationTableExtractionStrategy.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="pdfObjects\Rectangle.cs" />
+    <Compile Include="PdfObjects\Rectangle.cs" />
     <Compile Include="TableExtractor.cs" />
-    <Compile Include="pdfObjects\TextRectangle.cs" />
-    <Compile Include="pdfObjects\TextRectangleTemplate.cs" />
+    <Compile Include="PdfObjects\TextRectangle.cs" />
+    <Compile Include="PdfObjects\TextRectangleTemplate.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />

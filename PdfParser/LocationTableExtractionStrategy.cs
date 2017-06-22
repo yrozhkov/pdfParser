@@ -45,166 +45,6 @@ namespace PdfParser
         }
 
 
-        /// <summary>
-        ///     places text in text rectangles as pdf might render each character separetly
-        /// </summary>
-        /// <param name="renderInfo"></param>
-        public override void RenderText(TextRenderInfo renderInfo)
-        {
-            var segment = renderInfo.GetBaseline();
-
-            _charWidth = renderInfo.GetSingleSpaceWidth()/2f;
-            var text = renderInfo.GetText();
-            _log.Debug("RenderText " + text);
-
-            var bottomLeftCoordinate = renderInfo.GetDescentLine().GetStartPoint();
-            var topRightCoordinate = renderInfo.GetAscentLine().GetEndPoint();
-
-            var textRectangle = new TextRectangle
-            {
-                Text = text,
-                X = bottomLeftCoordinate[0],
-                Y = bottomLeftCoordinate[1],
-                Width = topRightCoordinate[0] - bottomLeftCoordinate[0],
-                Height = Math.Abs(bottomLeftCoordinate[1] - topRightCoordinate[1])
-            };
-            if (_pageRotation == 0)
-                textRectangle.Y = _pageHeight - textRectangle.Y;
-            if (_pageRotation == 90)
-            {
-                textRectangle.X = bottomLeftCoordinate[1];
-                textRectangle.Y = bottomLeftCoordinate[0];
-                textRectangle.Width = Math.Abs(topRightCoordinate[1] - bottomLeftCoordinate[1]);
-                textRectangle.Height = Math.Abs(bottomLeftCoordinate[0] - topRightCoordinate[0]);
-            }
-
-            var startLocation = segment.GetStartPoint();
-            var endLocation = segment.GetEndPoint();
-
-
-            var oVector = endLocation.Subtract(startLocation);
-            if (oVector.Length == 0)
-                oVector = new Vector(1, 0, 0);
-
-            var orientationVector = oVector.Normalize();
-            var orientationMagnitude =
-                (int) (Math.Atan2(orientationVector[Vector.I2], orientationVector[Vector.I1])*1000);
-
-            if (orientationMagnitude != 0)
-                if (orientationVector[1] == -1)
-                    textRectangle.Y = textRectangle.Y + textRectangle.Height;
-
-
-            if ((_lastChunk != null) && (Math.Abs(_lastChunk.Y - textRectangle.Y) < TOLERANCE))
-            {
-                var spacing = Math.Abs(textRectangle.X - (_lastChunk.X + _lastChunk.Width));
-                if (spacing < renderInfo.GetSingleSpaceWidth()/2f)
-                {
-                    _lastChunk.Width += textRectangle.Width;
-                    _lastChunk.Text += textRectangle.Text;
-                    return;
-                }
-            }
-            else if ((_lastChunk != null) && (orientationVector[1] == -1) &&
-                     (Math.Abs(_lastChunk.X - textRectangle.X) < TOLERANCE))
-            {
-                var spacing = Math.Abs(textRectangle.Y - (_lastChunk.Y + textRectangle.Height));
-                if (spacing < renderInfo.GetSingleSpaceWidth()/2f)
-                {
-                    _lastChunk.Height += textRectangle.Height;
-                    _lastChunk.Text += textRectangle.Text;
-                    return;
-                }
-            }
-
-
-            _lastChunk = textRectangle;
-
-            _textRectangles.Add(textRectangle);
-        }
-
-        /// <summary>
-        ///     Modifies the current path in pdf construction
-        /// </summary>
-        /// <param name="renderInfo">
-        ///     Contains information relating to construction the current path.
-        /// </param>
-        /// We are interested only in straight lines and rectangles
-        public void ModifyPath(PathConstructionRenderInfo renderInfo)
-        {
-            var segmentData = renderInfo.SegmentData;
-
-            switch (renderInfo.Operation)
-            {
-                case PathConstructionRenderInfo.MOVETO:
-                    _currentPoints.Add(new LineMove {X = segmentData[0], Y = segmentData[1], IsMove = true});
-                    break;
-                case PathConstructionRenderInfo.LINETO:
-                    _currentPoints.Add(new LineMove {X = segmentData[0], Y = segmentData[1], IsMove = false});
-
-                    break;
-                case PathConstructionRenderInfo.CURVE_123:
-                case PathConstructionRenderInfo.CURVE_13:
-                case PathConstructionRenderInfo.CURVE_23:
-                    break;
-                case PathConstructionRenderInfo.RECT:
-                    var x = segmentData[0];
-                    var y = segmentData[1];
-                    var width = segmentData[2];
-                    var height = segmentData[3];
-                    _currentRectangle = new Rectangle {X = x, Height = height, Width = width, Y = y};
-                    break;
-                case PathConstructionRenderInfo.CLOSE:
-
-                    break;
-            }
-        }
-
-        /// <summary>
-        ///     Not used
-        /// </summary>
-        /// <param name="rule"></param>
-        public void ClipPath(int rule)
-        {
-        }
-
-        /// <summary>
-        ///     Appends new rectangle to rectangles List
-        ///     or tries to construct a rectangle from individual lines
-        /// </summary>
-        /// <param name="renderInfo"></param>
-        /// <returns></returns>
-        public Path RenderPath(PathPaintingRenderInfo renderInfo)
-        {
-            if (renderInfo.Operation != PathPaintingRenderInfo.NO_OP)
-            {
-                if (_currentRectangle != null)
-                {
-                    var transformedRect = Transform(_currentRectangle, renderInfo.Ctm);
-                    var maxDimension = Math.Max(_pageWidth, _pageHeight);
-
-                    if (transformedRect.X + _currentRectangle.Width > maxDimension)
-                        _currentRectangle.Width = maxDimension - transformedRect.X;
-
-
-                    _rectangles.Add(new Rectangle
-                    {
-                        Height = _currentRectangle.Height,
-                        Width = _currentRectangle.Width,
-                        X = transformedRect.X,
-                        Y = transformedRect.Y
-                    });
-
-                    return null;
-                }
-                ConstructShape(renderInfo.Ctm);
-            }
-            _currentPoints.Clear();
-
-            return null;
-        }
-
-
         //TODO: Add logic to analyze lines as delimeters
         /// <summary>
         ///     Tries to construct a rectangle from current points
@@ -294,45 +134,6 @@ namespace PdfParser
         }
 
 
-        /// <summary>
-        ///     Overriden Itextsharp function rendering all text
-        /// </summary>
-        /// <returns></returns>
-        public override string GetResultantText()
-        {
-            var resultantText = new StringBuilder();
-            if (_textRectangles.Count == 0)
-                return "";
-
-            var maxLineHeight = Math.Ceiling(_textRectangles.Max(x => x.Height))*2;
-            var textAndRectYCoord =
-                _textRectangles.Union(_rectangles).GroupBy(x => x.Y).Select(x => x.Key).OrderBy(x => x).ToList();
-
-
-            float begin = 0;
-            var end = textAndRectYCoord.Last();
-            List<TextRectangle> text;
-            List<Rectangle> rect;
-            for (var i = 1; i < textAndRectYCoord.Count; i++)
-                if (textAndRectYCoord[i] - textAndRectYCoord[i - 1] > maxLineHeight)
-                {
-                    text = _textRectangles.Where(x => (x.Y < textAndRectYCoord[i]) && (x.Y >= begin)).ToList();
-                    rect = _rectangles.Where(x => (x.Y < textAndRectYCoord[i]) && (x.Y >= begin)).ToList();
-                    begin = textAndRectYCoord[i];
-                    if (text.Count > 0)
-                        resultantText.Append(GetResultantTextInternal(text, rect));
-                }
-
-            text = _textRectangles.Where(x => (x.Y <= end) && (x.Y >= begin)).ToList();
-            rect = _rectangles.Where(x => (x.Y <= end) && (x.Y >= begin)).ToList();
-            if (text.Count > 0)
-                resultantText.Append(GetResultantTextInternal(text, rect));
-
-
-            return resultantText.ToString();
-        }
-
-
         private string GetResultantTextInternal(List<TextRectangle> textChunks, List<Rectangle> rectangles)
         {
             var mostCommonCellHeight = rectangles.Count > 0
@@ -360,7 +161,7 @@ namespace PdfParser
                 : new Dictionary<float, List<Rectangle>>();
 
 
-            //We did not find any shapes so just   print the text as is
+            //We did not find any shapes so just print  text as is
             if (rectDictionary.Count == 0)
                 return GenerateText(textDictionary);
 
@@ -782,8 +583,9 @@ namespace PdfParser
             List<TextRectangleTemplate> templates, List<float> verticalDividers)
         {
             var returnDictionary = new Dictionary<float, List<TextRectangleTemplate>>();
-            var templateDictionary = templates.GroupBy(x => x.Y).ToDictionary(x => x.Key, x => x.OrderBy(x1 => x1.X).ToList());
-             
+            var templateDictionary = templates.GroupBy(x => x.Y)
+                .ToDictionary(x => x.Key, x => x.OrderBy(x1 => x1.X).ToList());
+
             foreach (var k in templateDictionary.Keys)
             {
                 var textRectangleTemplates = templateDictionary[k];
@@ -805,7 +607,7 @@ namespace PdfParser
                         });
 
                     for (var i = 0; i < normalizedRow.Count; i++)
-                        foreach (TextRectangleTemplate template in textRectangleTemplates)
+                        foreach (var template in textRectangleTemplates)
                             if (Math.Abs(template.X - normalizedRow[i].X) < 2)
                                 for (var p = 0; (p < template.HorizontalSpan) && (i + p < normalizedRow.Count); p++)
                                     normalizedRow[i + p].X = -1;
@@ -938,5 +740,211 @@ namespace PdfParser
                 buckets.Add(dividers[dividers.Count - 1]);
             return buckets;
         }
+
+        #region IExtRenderListener
+
+        /// <summary>
+        ///     Modifies the current path in pdf construction
+        /// </summary>
+        /// <param name="renderInfo">
+        ///     Contains information relating to construction the current path.
+        /// </param>
+        /// We are interested only in straight lines and rectangles
+        public void ModifyPath(PathConstructionRenderInfo renderInfo)
+        {
+            var segmentData = renderInfo.SegmentData;
+
+            switch (renderInfo.Operation)
+            {
+                case PathConstructionRenderInfo.MOVETO:
+                    _currentPoints.Add(new LineMove {X = segmentData[0], Y = segmentData[1], IsMove = true});
+                    break;
+                case PathConstructionRenderInfo.LINETO:
+                    _currentPoints.Add(new LineMove {X = segmentData[0], Y = segmentData[1], IsMove = false});
+
+                    break;
+                case PathConstructionRenderInfo.CURVE_123:
+                case PathConstructionRenderInfo.CURVE_13:
+                case PathConstructionRenderInfo.CURVE_23:
+                    break;
+                case PathConstructionRenderInfo.RECT:
+                    var x = segmentData[0];
+                    var y = segmentData[1];
+                    var width = segmentData[2];
+                    var height = segmentData[3];
+                    _currentRectangle = new Rectangle {X = x, Height = height, Width = width, Y = y};
+                    break;
+                case PathConstructionRenderInfo.CLOSE:
+
+                    break;
+            }
+        }
+
+        /// <summary>
+        ///     Not used
+        /// </summary>
+        /// <param name="rule"></param>
+        public void ClipPath(int rule)
+        {
+        }
+
+        /// <summary>
+        ///     Appends new rectangle to rectangles List
+        ///     or tries to construct a rectangle from individual lines
+        /// </summary>
+        /// <param name="renderInfo"></param>
+        /// <returns></returns>
+        public Path RenderPath(PathPaintingRenderInfo renderInfo)
+        {
+            if (renderInfo.Operation != PathPaintingRenderInfo.NO_OP)
+            {
+                if (_currentRectangle != null)
+                {
+                    var transformedRect = Transform(_currentRectangle, renderInfo.Ctm);
+                    var maxDimension = Math.Max(_pageWidth, _pageHeight);
+
+                    if (transformedRect.X + _currentRectangle.Width > maxDimension)
+                        _currentRectangle.Width = maxDimension - transformedRect.X;
+
+
+                    _rectangles.Add(new Rectangle
+                    {
+                        Height = _currentRectangle.Height,
+                        Width = _currentRectangle.Width,
+                        X = transformedRect.X,
+                        Y = transformedRect.Y
+                    });
+
+                    return null;
+                }
+                ConstructShape(renderInfo.Ctm);
+            }
+            _currentPoints.Clear();
+
+            return null;
+        }
+
+        #endregion
+
+        #region LocationTextExtractionStrategyoverrides
+
+        /// <summary>
+        ///     places text in text rectangles as pdf might render each character separetly
+        /// </summary>
+        /// <param name="renderInfo"></param>
+        public override void RenderText(TextRenderInfo renderInfo)
+        {
+            var segment = renderInfo.GetBaseline();
+
+            _charWidth = renderInfo.GetSingleSpaceWidth()/2f;
+            var text = renderInfo.GetText();
+            _log.Debug("RenderText " + text);
+
+            var bottomLeftCoordinate = renderInfo.GetDescentLine().GetStartPoint();
+            var topRightCoordinate = renderInfo.GetAscentLine().GetEndPoint();
+
+            var textRectangle = new TextRectangle
+            {
+                Text = text,
+                X = bottomLeftCoordinate[0],
+                Y = bottomLeftCoordinate[1],
+                Width = topRightCoordinate[0] - bottomLeftCoordinate[0],
+                Height = Math.Abs(bottomLeftCoordinate[1] - topRightCoordinate[1])
+            };
+            if (_pageRotation == 0)
+                textRectangle.Y = _pageHeight - textRectangle.Y;
+            if (_pageRotation == 90)
+            {
+                textRectangle.X = bottomLeftCoordinate[1];
+                textRectangle.Y = bottomLeftCoordinate[0];
+                textRectangle.Width = Math.Abs(topRightCoordinate[1] - bottomLeftCoordinate[1]);
+                textRectangle.Height = Math.Abs(bottomLeftCoordinate[0] - topRightCoordinate[0]);
+            }
+
+            var startLocation = segment.GetStartPoint();
+            var endLocation = segment.GetEndPoint();
+
+
+            var oVector = endLocation.Subtract(startLocation);
+            if (oVector.Length == 0)
+                oVector = new Vector(1, 0, 0);
+
+            var orientationVector = oVector.Normalize();
+            var orientationMagnitude =
+                (int) (Math.Atan2(orientationVector[Vector.I2], orientationVector[Vector.I1])*1000);
+
+            if (orientationMagnitude != 0)
+                if (orientationVector[1] == -1)
+                    textRectangle.Y = textRectangle.Y + textRectangle.Height;
+
+
+            if ((_lastChunk != null) && (Math.Abs(_lastChunk.Y - textRectangle.Y) < TOLERANCE))
+            {
+                var spacing = Math.Abs(textRectangle.X - (_lastChunk.X + _lastChunk.Width));
+                if (spacing < renderInfo.GetSingleSpaceWidth()/2f)
+                {
+                    _lastChunk.Width += textRectangle.Width;
+                    _lastChunk.Text += textRectangle.Text;
+                    return;
+                }
+            }
+            else if ((_lastChunk != null) && (orientationVector[1] == -1) &&
+                     (Math.Abs(_lastChunk.X - textRectangle.X) < TOLERANCE))
+            {
+                var spacing = Math.Abs(textRectangle.Y - (_lastChunk.Y + textRectangle.Height));
+                if (spacing < renderInfo.GetSingleSpaceWidth()/2f)
+                {
+                    _lastChunk.Height += textRectangle.Height;
+                    _lastChunk.Text += textRectangle.Text;
+                    return;
+                }
+            }
+
+
+            _lastChunk = textRectangle;
+
+            _textRectangles.Add(textRectangle);
+        }
+
+
+        /// <summary>
+        ///     Overriden Itextsharp function rendering all text
+        /// </summary>
+        /// <returns></returns>
+        public override string GetResultantText()
+        {
+            var resultantText = new StringBuilder();
+            if (_textRectangles.Count == 0)
+                return "";
+
+            var maxLineHeight = Math.Ceiling(_textRectangles.Max(x => x.Height))*2;
+            var textAndRectYCoord =
+                _textRectangles.Union(_rectangles).GroupBy(x => x.Y).Select(x => x.Key).OrderBy(x => x).ToList();
+
+
+            float begin = 0;
+            var end = textAndRectYCoord.Last();
+            List<TextRectangle> text;
+            List<Rectangle> rect;
+            for (var i = 1; i < textAndRectYCoord.Count; i++)
+                if (textAndRectYCoord[i] - textAndRectYCoord[i - 1] > maxLineHeight)
+                {
+                    text = _textRectangles.Where(x => (x.Y < textAndRectYCoord[i]) && (x.Y >= begin)).ToList();
+                    rect = _rectangles.Where(x => (x.Y < textAndRectYCoord[i]) && (x.Y >= begin)).ToList();
+                    begin = textAndRectYCoord[i];
+                    if (text.Count > 0)
+                        resultantText.Append(GetResultantTextInternal(text, rect));
+                }
+
+            text = _textRectangles.Where(x => (x.Y <= end) && (x.Y >= begin)).ToList();
+            rect = _rectangles.Where(x => (x.Y <= end) && (x.Y >= begin)).ToList();
+            if (text.Count > 0)
+                resultantText.Append(GetResultantTextInternal(text, rect));
+
+
+            return resultantText.ToString();
+        }
+
+        #endregion
     }
 }

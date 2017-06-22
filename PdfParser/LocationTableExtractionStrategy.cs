@@ -4,16 +4,14 @@ using System.Linq;
 using System.Text;
 using iTextSharp.awt.geom;
 using iTextSharp.text.pdf.parser;
+using Logging;
 using MoreLinq;
 using PdfParser.pdfObjects;
-
-using Point = PdfParser.pdfObjects.Point;
-using Logging;
 using Line = PdfParser.pdfObjects.Line;
+using Point = PdfParser.pdfObjects.Point;
 
 namespace PdfParser
 {
-  
     /// <summary>
     ///     Serches for all shapes in pdf documents along with text and detects tabular patterns
     /// </summary>
@@ -24,19 +22,19 @@ namespace PdfParser
 
         private readonly List<Point> _currentPoints = new List<Point>();
         private readonly string _delimeter;
+        private readonly List<Line> _lines = new List<Line>();
 
         private readonly float _pageHeight;
         private readonly int _pageRotation;
         private readonly float _pageWidth;
         private readonly List<Rectangle> _rectangles = new List<Rectangle>();
-        private readonly List<Line> _lines = new List<Line>();
-     
+
         private readonly List<TextRectangle> _textRectangles = new List<TextRectangle>();
         private readonly double TOLERANCE = 0.000001;
         private float _charWidth;
         private Rectangle _currentRectangle;
         private TextRectangle _lastChunk;
-       
+
 
         public LocationTableExtractionStrategy(int pageRotation, float pageWidth, float pageHeight, string delimeter)
         {
@@ -57,7 +55,7 @@ namespace PdfParser
 
             _charWidth = renderInfo.GetSingleSpaceWidth()/2f;
             var text = renderInfo.GetText();
-            _log.Debug("RenderText "+ text);
+            _log.Debug("RenderText " + text);
 
             var bottomLeftCoordinate = renderInfo.GetDescentLine().GetStartPoint();
             var topRightCoordinate = renderInfo.GetAscentLine().GetEndPoint();
@@ -159,8 +157,6 @@ namespace PdfParser
                 case PathConstructionRenderInfo.CLOSE:
 
                     break;
-                default:
-                    break;
             }
         }
 
@@ -202,7 +198,6 @@ namespace PdfParser
                     return null;
                 }
                 ConstructShape(renderInfo.Ctm);
-             
             }
             _currentPoints.Clear();
 
@@ -243,22 +238,17 @@ namespace PdfParser
                 }
 
 
-            List<Point> points = null;
-
-            if (_currentPoints.Count > 0)
-            {
-                points = new List<Point>();
-                foreach (var currentPoint in _currentPoints)
-                    points.Add(Transform(currentPoint, ctm));
-                points = points.DistinctBy(p => new {p.X, p.Y}).ToList();
-            }
-
-            else
+            if (_currentPoints.Count == 0)
                 return;
 
+            var points =
+                _currentPoints.Select(currentPoint => Transform(currentPoint, ctm))
+                    .DistinctBy(p => new {p.X, p.Y})
+                    .ToList();
+
+            //we have a rectangle
             if (points.Count == 4)
             {
-                //rect
                 var sortedPoints = points.OrderBy(x => x.X).ThenByDescending(x => x.Y).ToList();
                 _rectangles.Add(new Rectangle
                 {
@@ -271,9 +261,9 @@ namespace PdfParser
 
             if (_currentPoints.Count == 2)
             {
-                Point beginPoint = Transform(_currentPoints[0], ctm);
-                Point endPoint = Transform(_currentPoints[1], ctm);
-                _lines.Add(new Line (beginPoint,endPoint));
+                var beginPoint = Transform(_currentPoints[0], ctm);
+                var endPoint = Transform(_currentPoints[1], ctm);
+                _lines.Add(new Line(beginPoint, endPoint));
             }
         }
 
@@ -295,12 +285,12 @@ namespace PdfParser
 
 
             if (_pageRotation == 0)
-                return new Point(dst.x,_pageHeight - dst.y);
+                return new Point(dst.x, _pageHeight - dst.y);
 
             if (_pageRotation == 90)
-                return new Point (dst.x, dst.y);
+                return new Point(dst.x, dst.y);
 
-            throw new Exception( " Current page rotation is not handled");
+            throw new Exception("Current page rotation is not handled");
         }
 
 
@@ -315,24 +305,20 @@ namespace PdfParser
                 return "";
 
             var maxLineHeight = Math.Ceiling(_textRectangles.Max(x => x.Height))*2;
+            var textAndRectYCoord =
+                _textRectangles.Union(_rectangles).GroupBy(x => x.Y).Select(x => x.Key).OrderBy(x => x).ToList();
 
-
-            var textandlinesYcoordinates = _textRectangles.GroupBy(x => x.Y).Select(x => x.Key).ToList();
-            var rectKeys = _rectangles.GroupBy(x => x.Y).Select(x => x.Key).ToList();
-            textandlinesYcoordinates.AddRange(rectKeys);
-
-            textandlinesYcoordinates.Sort();
 
             float begin = 0;
-            var end = textandlinesYcoordinates.Last();
+            var end = textAndRectYCoord.Last();
             List<TextRectangle> text;
             List<Rectangle> rect;
-            for (var i = 1; i < textandlinesYcoordinates.Count; i++)
-                if (textandlinesYcoordinates[i] - textandlinesYcoordinates[i - 1] > maxLineHeight)
+            for (var i = 1; i < textAndRectYCoord.Count; i++)
+                if (textAndRectYCoord[i] - textAndRectYCoord[i - 1] > maxLineHeight)
                 {
-                    text = _textRectangles.Where(x => (x.Y < textandlinesYcoordinates[i]) && (x.Y >= begin)).ToList();
-                    rect = _rectangles.Where(x => (x.Y < textandlinesYcoordinates[i]) && (x.Y >= begin)).ToList();
-                    begin = textandlinesYcoordinates[i];
+                    text = _textRectangles.Where(x => (x.Y < textAndRectYCoord[i]) && (x.Y >= begin)).ToList();
+                    rect = _rectangles.Where(x => (x.Y < textAndRectYCoord[i]) && (x.Y >= begin)).ToList();
+                    begin = textAndRectYCoord[i];
                     if (text.Count > 0)
                         resultantText.Append(GetResultantTextInternal(text, rect));
                 }
@@ -349,7 +335,7 @@ namespace PdfParser
 
         private string GetResultantTextInternal(List<TextRectangle> textChunks, List<Rectangle> rectangles)
         {
-            var mostCommoncellHeight = rectangles.Count > 0
+            var mostCommonCellHeight = rectangles.Count > 0
                 ? rectangles.GroupBy(x => x.Height)
                     .OrderByDescending(grp => grp.Count())
                     .Select(grp => grp.Key)
@@ -368,13 +354,12 @@ namespace PdfParser
                     .First()*0.2f;
 
 
-            var textDictionary = StrategyHelper.GetTextDictionary(textChunks, overflowDelta);
+            var textDictionary = GetTextDictionary(textChunks, overflowDelta);
             var rectDictionary = rectangles.Count > 0
-                ? StrategyHelper.GetRectDictionary(rectangles, mostCommoncellHeight, minHeight, minWidth)
+                ? GetRectanglesDictionary(rectangles, mostCommonCellHeight, minHeight, minWidth)
                 : new Dictionary<float, List<Rectangle>>();
 
 
-            var delimetedText = new StringBuilder();
             //We did not find any shapes so just   print the text as is
             if (rectDictionary.Count == 0)
                 return GenerateText(textDictionary);
@@ -383,15 +368,206 @@ namespace PdfParser
             //  var vlines = StrategyHelper.GetVerticalLines(_lines);
             //  var hlines = StrategyHelper.GetHorizontalLines(_lines);
 
-            var template = ArrangeDictionaries(rectDictionary, textDictionary);
+            var template = ArrangeDictionariesIntoTemplates(rectDictionary, textDictionary);
 
 
             foreach (var yCoordKey in textDictionary.Keys)
             {
                 var textRect = textDictionary[yCoordKey].Where(x => !x.Assigned).ToList();
-                PlacetextRectIntoTemplates(textRect, template, yCoordKey, overflowDelta);
+                PlaceTextRectIntoTemplates(textRect, template, yCoordKey, overflowDelta);
+            }
+            var delimetedText = CreateDelimetdTextFromTemplates(template);
+            return delimetedText;
+        }
+
+
+        /// <summary>
+        ///     groups all text by lines
+        /// </summary>
+        /// <param name="textRectangles"></param>
+        /// <param name="overflowDelta"></param>
+        /// <returns></returns>
+        public Dictionary<float, List<TextRectangle>> GetTextDictionary(List<TextRectangle> textRectangles,
+            float overflowDelta)
+        {
+            var rectDictionary = new Dictionary<float, List<TextRectangle>>();
+            var displaced = new HashSet<float>();
+
+
+            textRectangles = textRectangles.OrderBy(x => x.Y).ToList();
+
+            foreach (var rectangle in textRectangles)
+            {
+                var ycoord = rectangle.Y;
+                var found = false;
+
+                if (!rectDictionary.ContainsKey(rectangle.Y))
+                {
+                    foreach (var y in rectDictionary.Keys)
+                        if (Math.Abs(rectangle.Y - y) < rectangle.Height + overflowDelta)
+                        {
+                            if (Math.Abs(ycoord - y) > TOLERANCE)
+                                displaced.Add(y);
+                            ycoord = y;
+                            found = true;
+                            break;
+                        }
+
+                    if (!found)
+                        rectDictionary[rectangle.Y] = new List<TextRectangle>();
+                }
+
+                rectDictionary[ycoord].Add(rectangle);
             }
 
+            //deal with text wich is not vertically aligned
+            if (displaced.Count > 0)
+                HandleDisplaced(displaced, rectDictionary);
+
+            var keys = rectDictionary.Keys.ToList();
+
+            foreach (var k in keys)
+                rectDictionary[k] = rectDictionary[k].OrderBy(x => x.X).ToList();
+            return rectDictionary;
+        }
+
+        /// <summary>
+        ///     Handles lines wich not perfectly alligned either by widening the space or ajusting to wider y coordinate
+        /// </summary>
+        /// <param name="displacedCoordinates"></param>
+        /// <param name="rectDictionary"></param>
+        private void HandleDisplaced(HashSet<float> displacedCoordinates,
+            Dictionary<float, List<TextRectangle>> rectDictionary)
+        {
+            foreach (var displacedYcoord in displacedCoordinates)
+            {
+                var textRectangles = rectDictionary[displacedYcoord];
+                var heightDict = textRectangles.GroupBy(x => x.Height).ToDictionary(x => x.Key, x => x.ToList());
+                var cnt = 0;
+                float y = 0;
+                float h = 0;
+
+                foreach (var height in heightDict.Values)
+                    if (height.Count > cnt)
+                    {
+                        cnt = height.Count;
+                        y = height[0].Y;
+                        h = height[0].Height;
+                    }
+                    else if (height.Count == cnt)
+                    {
+                        if (height[0].Height > h)
+                        {
+                            y = height[0].Y;
+                            h = height[0].Height;
+                        }
+                    }
+
+                //we have  a baseline
+                if (Math.Abs(y - displacedYcoord) > TOLERANCE)
+                {
+                    rectDictionary[y] = rectDictionary[displacedYcoord];
+                    rectDictionary.Remove(displacedYcoord);
+                }
+            }
+        }
+
+        /// <summary>
+        ///     This function minimizes all rectanges from the list and tries to fix misaligned ones
+        /// </summary>
+        /// <param name="rectangles"></param>
+        /// <param name="avgHeight"></param>
+        /// <param name="minHeight"></param>
+        /// <param name="minWidth"></param>
+        /// <returns></returns>
+        public Dictionary<float, List<Rectangle>> GetRectanglesDictionary(List<Rectangle> rectangles, float avgHeight,
+            float minHeight, float minWidth)
+        {
+            var tempRectangleDictionary = new Dictionary<float, List<Rectangle>>();
+            var rectDictionary = new Dictionary<float, List<Rectangle>>();
+
+
+            foreach (var rectangle in rectangles)
+            {
+                if ((rectangle.Y < 0) || (rectangle.Width < minWidth) || (rectangle.Height < minHeight) ||
+                    ((rectangle.Height > avgHeight*3) && rectangles.Any(r => r.Intersects(rectangle))))
+                    continue;
+
+
+                if (!tempRectangleDictionary.ContainsKey(rectangle.Y))
+                    tempRectangleDictionary[rectangle.Y] = new List<Rectangle>();
+                tempRectangleDictionary[rectangle.Y].Add(rectangle);
+            }
+
+            if (!tempRectangleDictionary.Any())
+                return rectDictionary;
+
+            var keys = tempRectangleDictionary.Keys.OrderBy(x => x).ToList();
+
+            for (var k = 0; k < keys.Count; k++)
+            {
+                var key = keys[k];
+                var cells =
+                    tempRectangleDictionary[key].DistinctBy(x => new {x.X, W = x.Width}).OrderBy(x => x.X).ToList();
+                var filteredList = cells.Where(x => (x.Width > 1) && (x.Height >= minHeight)).ToList();
+                if (filteredList.Count > 1)
+                {
+                    rectDictionary[key] = filteredList;
+                }
+                else
+                {
+                    var currentCell = cells[0];
+                    filteredList = new List<Rectangle>();
+
+                    for (var i = 1; i < cells.Count; i++)
+                    {
+                        var width = cells[i].X - currentCell.X;
+                        var height = currentCell.Height;
+                        if (k > 0)
+                            height = keys[k] - keys[k - 1];
+                        if ((width > 1) && (height >= minHeight))
+                            filteredList.Add(new Rectangle
+                            {
+                                Height = height,
+                                Width = width,
+                                X = currentCell.X,
+                                Y = currentCell.Y
+                            });
+                        currentCell = cells[i];
+                    }
+
+                    if (filteredList.Count > 1)
+                    {
+                        if ((cells.Last().Width > 1) && (cells.Last().Height > 1))
+                            filteredList.Add(new Rectangle
+                            {
+                                Height = filteredList.Last().Height,
+                                Width = cells.Last().Width,
+                                X = cells.Last().X,
+                                Y = cells.Last().Y
+                            });
+                        rectDictionary[key] = filteredList;
+                    }
+                    if (cells.Count == 1)
+                    {
+                        filteredList.Add(cells[0]);
+                        rectDictionary[key] = filteredList;
+                    }
+                }
+            }
+
+
+            return rectDictionary;
+        }
+
+        /// <summary>
+        ///     Creates delimeted text from templates
+        /// </summary>
+        /// <param name="template"></param>
+        /// <returns></returns>
+        private string CreateDelimetdTextFromTemplates(Dictionary<float, List<TextRectangleTemplate>> template)
+        {
+            var delimetedText = new StringBuilder();
             var keys = template.Keys.OrderBy(x => x).ToList();
             foreach (var key in keys)
             {
@@ -412,10 +588,7 @@ namespace PdfParser
                                 delimetedText.Append(" ").Append(list[i].Text);
                         delimetedText.Append(" ");
                     }
-                    //if (textRectangleTemplate.VerticalSpan > 1)
-                    //{
 
-                    //}
                     if (textRectangleTemplate.HorizontalSpan > 1)
                         for (var i = 1; i < textRectangleTemplate.HorizontalSpan; i++)
                             delimetedText.Append(_delimeter);
@@ -426,8 +599,6 @@ namespace PdfParser
 
                 delimetedText.AppendLine();
             }
-
-
             return delimetedText.ToString();
         }
 
@@ -438,8 +609,8 @@ namespace PdfParser
         /// <param name="textRect"></param>
         /// <param name="template"></param>
         /// <param name="yCoordKey"></param>
-        /// <param name="tolerance"></param>
-        private void PlacetextRectIntoTemplates(List<TextRectangle> textRect,
+        /// <param name="overflowDelta"></param>
+        private void PlaceTextRectIntoTemplates(List<TextRectangle> textRect,
             Dictionary<float, List<TextRectangleTemplate>> template, float yCoordKey, float overflowDelta)
         {
             if (textRect.Count > 0)
@@ -466,15 +637,8 @@ namespace PdfParser
                                 //need to adjust other cells
                                 var ordered = template[templateYcoord].OrderBy(x => x.X).ToList();
                                 var i = 0;
-                                while (textRectangle.X > ordered[i].X)
-                                {
-                                    if (i == ordered.Count - 1) break;
-
-
+                                while ((textRectangle.X > ordered[i].X) && (i < ordered.Count))
                                     i++;
-                                }
-
-
                                 var xCoord = i == 0 ? 0 : ordered[i].X + ordered[i].Width;
 
 
@@ -507,14 +671,13 @@ namespace PdfParser
                     template[yCoordKey] = new List<TextRectangleTemplate>();
 
 
-                var templ = new TextRectangleTemplate();
-                templ.Text = textRect;
+                var templ = new TextRectangleTemplate {Text = textRect};
                 template[yCoordKey].Add(templ);
             }
         }
 
         /// <summary>
-        ///     Dumps text from dictionary as is
+        ///     Dumps text from dictionary as is in case then there is no graphic delimeters
         /// </summary>
         /// <param name="textDictionary"></param>
         /// <returns></returns>
@@ -541,19 +704,17 @@ namespace PdfParser
         /// <param name="rectDictionary"></param>
         /// <param name="textDictionary"></param>
         /// <returns></returns>
-        private Dictionary<float, List<TextRectangleTemplate>> ArrangeDictionaries(
+        private Dictionary<float, List<TextRectangleTemplate>> ArrangeDictionariesIntoTemplates(
             Dictionary<float, List<Rectangle>> rectDictionary,
             Dictionary<float, List<TextRectangle>> textDictionary)
         {
-             
-
             var verticalDivider = new HashSet<float>();
             var horizontalDivider = new HashSet<float>();
 
-            var rKeys = rectDictionary.Keys.OrderBy(x => x).ToList();
+            var rectDictKeys = rectDictionary.Keys.OrderBy(x => x).ToList();
 
             var allrectangles = new List<Rectangle>();
-            foreach (var rk in rKeys)
+            foreach (var rk in rectDictKeys)
             {
                 var rowRectangles = rectDictionary[rk];
                 allrectangles.AddRange(rowRectangles);
@@ -590,22 +751,22 @@ namespace PdfParser
 
 
             var normalizeVertDividers = NormalizeDividers(verticalDivider);
-            //  var horizontalDividers = NormalizeDividers(hDividers);
+
             var templates = new List<TextRectangleTemplate>();
 
-            for (var i = 0; i < rKeys.Count; i++)
+            foreach (var rectDictKey in rectDictKeys)
             {
-                if (!rectDictionary.ContainsKey(rKeys[i]) || (rectDictionary[rKeys[i]].Count == 0))
+                if (!rectDictionary.ContainsKey(rectDictKey) || (rectDictionary[rectDictKey].Count == 0))
                     continue;
-                var minWidth = rectDictionary[rKeys[i]].Select(x => x.Height).Distinct().OrderBy(x => x).First();
-                foreach (var rowRectangle in rectDictionary[rKeys[i]])
+                var minWidth = rectDictionary[rectDictKey].Select(x => x.Height).Distinct().OrderBy(x => x).First();
+                foreach (var rowRectangle in rectDictionary[rectDictKey])
                     templates.AddRange(CreateTemplates(rowRectangle, normalizeVertDividers, minWidth));
             }
 
 
             AssignTextRectangles(templates, textDictionary);
 
-            var returnDictionary = CreateReturnDictionary(templates, normalizeVertDividers);
+            var returnDictionary = CreateTemplatesDictionary(templates, normalizeVertDividers);
 
 
             return returnDictionary;
@@ -617,24 +778,22 @@ namespace PdfParser
         /// <param name="templates"></param>
         /// <param name="verticalDividers"></param>
         /// <returns></returns>
-        private Dictionary<float, List<TextRectangleTemplate>> CreateReturnDictionary(
+        private Dictionary<float, List<TextRectangleTemplate>> CreateTemplatesDictionary(
             List<TextRectangleTemplate> templates, List<float> verticalDividers)
         {
             var returnDictionary = new Dictionary<float, List<TextRectangleTemplate>>();
-            var tDict = templates.GroupBy(x => x.Y).ToDictionary(x => x.Key, x => x.OrderBy(x1 => x1.X).ToList());
-            var keys = tDict.Keys;
-
-
-            foreach (var k in keys)
+            var templateDictionary = templates.GroupBy(x => x.Y).ToDictionary(x => x.Key, x => x.OrderBy(x1 => x1.X).ToList());
+             
+            foreach (var k in templateDictionary.Keys)
             {
-                var templ = tDict[k];
-                var h = templ.Average(x => x.Height);
+                var textRectangleTemplates = templateDictionary[k];
+                var averageHeight = textRectangleTemplates.Average(x => x.Height);
 
-                if (templ.Count != verticalDividers.Count - 1)
+                if (textRectangleTemplates.Count != verticalDividers.Count - 1)
                 {
-                    var perfectRow = new List<TextRectangleTemplate>();
+                    var normalizedRow = new List<TextRectangleTemplate>();
                     for (var j = 0; j < verticalDividers.Count - 1; j++)
-                        perfectRow.Add(new TextRectangleTemplate
+                        normalizedRow.Add(new TextRectangleTemplate
                         {
                             Text = new List<TextRectangle>(),
                             X = verticalDividers[j],
@@ -642,20 +801,20 @@ namespace PdfParser
                             HorizontalSpan = 1,
                             VerticalSpan = 1,
                             Y = 0,
-                            Height = h
+                            Height = averageHeight
                         });
 
-                    for (var i = 0; i < perfectRow.Count; i++)
-                        for (var j = 0; j < templ.Count; j++)
-                            if (Math.Abs(templ[j].X - perfectRow[i].X) < 2)
-                                for (var p = 0; (p < templ[j].HorizontalSpan) && (i + p < perfectRow.Count); p++)
-                                    perfectRow[i + p].X = -1;
+                    for (var i = 0; i < normalizedRow.Count; i++)
+                        foreach (TextRectangleTemplate template in textRectangleTemplates)
+                            if (Math.Abs(template.X - normalizedRow[i].X) < 2)
+                                for (var p = 0; (p < template.HorizontalSpan) && (i + p < normalizedRow.Count); p++)
+                                    normalizedRow[i + p].X = -1;
 
-                    templ.AddRange(perfectRow.Where(x => x.X > 0));
+                    textRectangleTemplates.AddRange(normalizedRow.Where(x => x.X > 0));
                 }
 
 
-                returnDictionary[k] = templ.OrderBy(x => x.X).ToList();
+                returnDictionary[k] = textRectangleTemplates.OrderBy(x => x.X).ToList();
             }
             return returnDictionary;
         }
@@ -756,9 +915,9 @@ namespace PdfParser
             return templates;
         }
 
-        private List<float> NormalizeDividers(HashSet<float> vDividers)
+        private List<float> NormalizeDividers(HashSet<float> rawDividers)
         {
-            var dividers = vDividers.OrderBy(x => x).ToList();
+            var dividers = rawDividers.OrderBy(x => x).ToList();
 
             var buckets = new List<float>();
 

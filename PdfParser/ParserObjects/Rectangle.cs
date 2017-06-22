@@ -1,6 +1,6 @@
 ﻿ 
 
-namespace PdfParser.pdfObjects
+namespace PdfParser.ParserObjects
 {
     /// <summary>
     /// Rectangle represented by fixating a point and specifying width and height

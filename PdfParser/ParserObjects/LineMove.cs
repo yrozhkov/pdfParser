@@ -1,4 +1,4 @@
-﻿namespace PdfParser.pdfObjects
+﻿namespace PdfParser.ParserObjects
 {
     /// <summary>
     /// Shapes are defined by a series of lines and curves. 

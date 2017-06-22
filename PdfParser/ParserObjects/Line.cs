@@ -1,4 +1,4 @@
-﻿namespace PdfParser.pdfObjects
+﻿namespace PdfParser.ParserObjects
 {
     /// <summary>
     ///     Line in coordinate space

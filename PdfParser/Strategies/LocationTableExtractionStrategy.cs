@@ -6,9 +6,9 @@ using iTextSharp.awt.geom;
 using iTextSharp.text.pdf.parser;
 using Logging;
 using MoreLinq;
-using PdfParser.pdfObjects;
-using Line = PdfParser.pdfObjects.Line;
-using Point = PdfParser.pdfObjects.Point;
+using PdfParser.ParserObjects;
+using Line = PdfParser.ParserObjects.Line;
+using Point = PdfParser.ParserObjects.Point;
 
 namespace PdfParser.Strategies
 {

@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace PdfParser.pdfObjects
+namespace PdfParser.ParserObjects
 {
     /// <summary>
     /// Point in coordinate space

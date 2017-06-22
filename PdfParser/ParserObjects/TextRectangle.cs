@@ -1,4 +1,4 @@
-﻿namespace PdfParser.pdfObjects
+﻿namespace PdfParser.ParserObjects
 {
     /// <summary>
     /// Represents cell with text

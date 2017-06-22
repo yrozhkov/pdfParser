@@ -9,6 +9,7 @@ namespace PdfParser
     {
         public string ExtractText(string fileName, string delimeter)
         {
+             
             var str = new StringBuilder();
 
 

@@ -1,6 +1,6 @@
 ﻿using System.Collections.Generic;
 
-namespace PdfParser.pdfObjects
+namespace PdfParser.ParserObjects
 {
     internal class TextRectangleTemplate : Rectangle
     {

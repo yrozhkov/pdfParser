@@ -21,15 +21,17 @@ namespace PdfParser.Strategies
 
 
         private readonly List<Point> _currentPoints = new List<Point>();
-        private readonly string _delimeter;
         private readonly List<Line> _lines = new List<Line>();
+        private readonly List<Rectangle> _rectangles = new List<Rectangle>();
+        private readonly List<TextRectangle> _textRectangles = new List<TextRectangle>();
 
+        private readonly string _delimeter;
         private readonly float _pageHeight;
         private readonly int _pageRotation;
         private readonly float _pageWidth;
-        private readonly List<Rectangle> _rectangles = new List<Rectangle>();
+       
 
-        private readonly List<TextRectangle> _textRectangles = new List<TextRectangle>();
+       
         private readonly double TOLERANCE = 0.000001;
         private float _charWidth;
         private Rectangle _currentRectangle;
@@ -97,6 +99,7 @@ namespace PdfParser.Strategies
                     Height = Math.Abs(sortedPoints[1].Y - sortedPoints[0].Y),
                     Width = sortedPoints[2].X - sortedPoints[0].X
                 });
+                return;
             }
 
             if (_currentPoints.Count == 2)
@@ -108,7 +111,7 @@ namespace PdfParser.Strategies
         }
 
         /// <summary>
-        ///     Applies  Affine transformation to point
+        ///     Applies Affine transformation to point
         /// </summary>
         /// <param name="point"></param>
         /// <param name="transormationMatrix"></param>
